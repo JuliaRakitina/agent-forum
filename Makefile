@@ -12,14 +12,16 @@ test:
 test-race:
 	$(GO) test -race -count=1 ./internal/...
 
+# The root package embeds frontend/dist, which exists only after a frontend
+# build, so vet covers the core and commands; `wails build` vets the rest.
 vet:
-	$(GO) vet ./...
+	$(GO) vet ./internal/... ./cmd/...
 
 lint: vet
 	cd frontend && npm run typecheck
 
 frontend-check:
-	cd frontend && npm ci && npm run typecheck && npm run build
+	cd frontend && npm ci && npm run typecheck && npm test && npm run build
 
 build:
 	$(WAILS) build
