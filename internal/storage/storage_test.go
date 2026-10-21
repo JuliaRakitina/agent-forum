@@ -315,7 +315,7 @@ func TestConcurrentWritersWaitInsteadOfFailing(t *testing.T) {
 	ctx := context.Background()
 	errs := make(chan error, 2)
 	for i := 0; i < 2; i++ {
-		go func(i int) {
+		go func() {
 			errs <- db.Update(ctx, func(tx *Tx) error {
 				if _, err := tx.GetTopic(tp.ID); err != nil { // read first, then write
 					return err
@@ -324,7 +324,7 @@ func TestConcurrentWritersWaitInsteadOfFailing(t *testing.T) {
 				ev := domain.NewEvent(domain.EventTopicCreated, tp.ID, nil)
 				return tx.AppendEvent(&ev)
 			})
-		}(i)
+		}()
 	}
 	for i := 0; i < 2; i++ {
 		if err := <-errs; err != nil {
