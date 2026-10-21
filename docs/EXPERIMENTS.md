@@ -9,6 +9,23 @@ Every flag below is what `internal/runners/claude` and
 `internal/runners/codex` generate. If an experiment fails, change the
 adapter and its tests, not the experiment.
 
+## Using the probe
+
+`cmd/probe` runs one request through an adapter with the exact flags the
+forum generates, prints the streamed events and the parsed result, and
+exits non-zero on failure. Prefer it over hand-typed commands so that a
+passing experiment also validates the parser:
+
+```bash
+go run ./cmd/probe -provider claude -print-args "Reply with OK"   # show argv + stdin, do not run
+go run ./cmd/probe -provider claude "Reply with the single word OK."
+go run ./cmd/probe -provider codex  "Reply with the single word OK."
+go run ./cmd/probe -provider claude -tools read_only -isolation soft "List the files in the current directory."
+```
+
+Press Ctrl+C while it runs to exercise cancellation through the same code
+path the orchestrator uses.
+
 ## 0. Versions
 
 ```bash
