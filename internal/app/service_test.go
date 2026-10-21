@@ -157,10 +157,14 @@ func TestSealedOutputAndContext(t *testing.T) {
 	if _, err := svc.RunOutput(ctx, runID); !errors.Is(err, ErrSealed) {
 		t.Fatalf("want ErrSealed, got %v", err)
 	}
+	if _, err := svc.EvaluateRound(ctx, res.Round.ID, true); err == nil {
+		t.Fatal("evaluation must require a revealed round")
+	}
 	req := <-fk.Started
 	if !strings.Contains(req.Prompt, "Goal: decide") {
 		t.Fatalf("frozen context missing from prompt:\n%s", req.Prompt)
 	}
+	<-fk.Started // the other run of the original round
 	if err := svc.RevealRound(ctx, res.Round.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -189,9 +193,6 @@ func TestSealedOutputAndContext(t *testing.T) {
 		if !strings.Contains(req.Prompt, "secret") {
 			t.Fatalf("evaluation prompt lacks the revealed answers:\n%s", req.Prompt)
 		}
-	}
-	if _, err := svc.EvaluateRound(ctx, res.Round.ID, true); err == nil {
-		t.Fatal("evaluation must require a revealed round")
 	}
 	if err := svc.SetContextRevisionStatus(ctx, rev.ID, "weird"); err == nil {
 		t.Fatal("invalid status must be rejected")
