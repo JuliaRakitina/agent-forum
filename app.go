@@ -130,6 +130,11 @@ func (a *App) RevealRound(roundID string) error { return a.svc.RevealRound(a.ctx
 // RetryRound queues new runs for the failed participants of a round.
 func (a *App) RetryRound(roundID string) error { return a.svc.RetryRound(a.ctx, domain.ID(roundID)) }
 
+// EvaluateRound starts an independent evaluation of a revealed round.
+func (a *App) EvaluateRound(roundID string, autoReveal bool) (domain.Round, error) {
+	return a.svc.EvaluateRound(a.ctx, domain.ID(roundID), autoReveal)
+}
+
 // RunOutput returns the streamed text of a run.
 func (a *App) RunOutput(runID string) (string, error) {
 	return a.svc.RunOutput(a.ctx, domain.ID(runID))

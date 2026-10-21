@@ -26,6 +26,10 @@ export function EnsureWorkspace() {
   return window['go']['main']['App']['EnsureWorkspace']();
 }
 
+export function EvaluateRound(arg1, arg2) {
+  return window['go']['main']['App']['EvaluateRound'](arg1, arg2);
+}
+
 export function Events(arg1, arg2) {
   return window['go']['main']['App']['Events'](arg1, arg2);
 }

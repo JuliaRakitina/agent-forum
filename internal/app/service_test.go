@@ -168,6 +168,31 @@ func TestSealedOutputAndContext(t *testing.T) {
 	if err != nil || out != "secret" {
 		t.Fatalf("%q %v", out, err)
 	}
+	fk.Next = fake.Script{Chunks: []string{"verdict"}, FailAfter: -1}
+	eval, err := svc.EvaluateRound(ctx, res.Round.ID, true)
+	if err != nil || eval.Kind != domain.RoundIndependent || len(eval.ParticipantIDs) != 2 || eval.Prompt != EvaluationPrompt {
+		t.Fatalf("%+v %v", eval, err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		th, _ := svc.GetThread(ctx, tp.ID, 50)
+		if len(th.Rounds) == 2 && th.Rounds[1].Status == domain.RoundRevealed {
+			if len(th.Messages) != 5 {
+				t.Fatalf("evaluation messages: %d", len(th.Messages))
+			}
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for i := 0; i < 2; i++ {
+		req := <-fk.Started
+		if !strings.Contains(req.Prompt, "secret") {
+			t.Fatalf("evaluation prompt lacks the revealed answers:\n%s", req.Prompt)
+		}
+	}
+	if _, err := svc.EvaluateRound(ctx, res.Round.ID, true); err == nil {
+		t.Fatal("evaluation must require a revealed round")
+	}
 	if err := svc.SetContextRevisionStatus(ctx, rev.ID, "weird"); err == nil {
 		t.Fatal("invalid status must be rejected")
 	}

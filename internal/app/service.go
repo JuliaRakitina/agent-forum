@@ -450,6 +450,34 @@ func (s *Service) RetryRound(ctx context.Context, roundID domain.ID) error {
 	return s.orch.RetryRound(ctx, roundID)
 }
 
+// EvaluationPrompt is the task given to every participant of an evaluation
+// round. The revealed answers reach them through the frozen discussion.
+const EvaluationPrompt = "Evaluate the answers given in the previous round, one paragraph per participant: " +
+	"what is right, what is wrong or missing, and which answer you would act on and why. " +
+	"Be specific and do not restate the answers."
+
+// EvaluateRound starts an independent evaluation round over a revealed
+// round: every participant of the original round judges the revealed
+// answers without seeing the other judgements until the reveal.
+func (s *Service) EvaluateRound(ctx context.Context, roundID domain.ID, autoReveal bool) (domain.Round, error) {
+	var original domain.Round
+	err := s.db.View(ctx, func(tx *storage.Tx) error {
+		r, err := tx.GetRound(roundID)
+		original = r
+		return err
+	})
+	if err != nil {
+		return domain.Round{}, err
+	}
+	if original.Status != domain.RoundRevealed {
+		return domain.Round{}, fmt.Errorf("round is %s, only a revealed round can be evaluated", original.Status)
+	}
+	return s.orch.StartRound(ctx, orchestrator.RoundSpec{
+		TopicID: original.TopicID, Kind: domain.RoundIndependent, Prompt: EvaluationPrompt,
+		ParticipantIDs: original.ParticipantIDs, AutoReveal: autoReveal,
+	})
+}
+
 // RunOutput returns the streamed text of a run. For a run of an
 // unrevealed independent round it returns ErrSealed.
 func (s *Service) RunOutput(ctx context.Context, runID domain.ID) (string, error) {

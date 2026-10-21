@@ -94,6 +94,7 @@ signal it calls `Events(after)` and applies the missing events in order.
 | `CancelRun(runId)`, `CancelRound(roundId)` | |
 | `RevealRound(roundId)` | From `awaiting_reveal` or, explicitly, `partial` |
 | `RetryRound(roundId)` | New runs for participants without a successful run |
+| `EvaluateRound(roundId, autoReveal)` | Independent round in which the participants of a revealed round judge each other's answers |
 | `RunOutput(runId)` | Streamed text; error while the round is sealed |
 | `SaveContext(topicId, doc)` | New accepted revision authored by the human |
 | `ListContextRevisions(topicId)`, `SetContextRevisionStatus(id, status)` | Accept or discard a proposal |

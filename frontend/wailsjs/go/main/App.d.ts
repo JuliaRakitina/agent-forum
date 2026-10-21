@@ -16,6 +16,8 @@ export function CreateWorkspace(arg1:string,arg2:string):Promise<domain.Workspac
 
 export function EnsureWorkspace():Promise<domain.Workspace>;
 
+export function EvaluateRound(arg1:string,arg2:boolean):Promise<domain.Round>;
+
 export function Events(arg1:number,arg2:number):Promise<Array<domain.Event>>;
 
 export function GetThread(arg1:string,arg2:number):Promise<app.Thread>;
