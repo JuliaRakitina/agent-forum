@@ -11,6 +11,10 @@ assembled; nothing has been verified against real CLIs yet. See
 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) for what that verification
 looks like.
 
+![The forum in mock mode: a revealed independent round with answers from two agents and the shared context panel](docs/screenshot-mock.png)
+
+*Mock mode: the UI running in a browser against the in-memory backend, no CLI involved.*
+
 ## What it does
 
 - Topics with threaded messages, mentions and streaming answers.
