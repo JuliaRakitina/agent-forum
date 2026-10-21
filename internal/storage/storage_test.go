@@ -131,7 +131,7 @@ func TestMessagesSealedAndReveal(t *testing.T) {
 			t.Fatalf("visible: %+v", visible)
 		}
 		all, _ := tx.ListMessages(MessageQuery{TopicID: tp.ID, IncludeSealed: true})
-		if len(all) != 3 || all[1].Mentions != nil && len(all[1].Mentions) != 0 {
+		if len(all) != 3 || len(all[1].Mentions) != 0 {
 			t.Fatalf("all: %+v", all)
 		}
 		if all[0].Mentions[0] != p.ID {
@@ -296,7 +296,7 @@ func TestEventLogSequence(t *testing.T) {
 	})
 }
 
-func errorsJoin(what string, err error, v any) error {
+func errorsJoin(what string, err error, _ any) error {
 	if err != nil {
 		return err
 	}

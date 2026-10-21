@@ -68,7 +68,7 @@ func newFixture(t *testing.T, cfg Config) *fixture {
 }
 
 // waitRound polls until the round reaches one of the wanted states.
-func (f *fixture) waitRound(id domain.ID, want ...domain.RoundStatus) domain.Round {
+func (f *fixture) waitRound(id domain.ID, want ...domain.RoundStatus) {
 	f.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -80,13 +80,12 @@ func (f *fixture) waitRound(id domain.ID, want ...domain.RoundStatus) domain.Rou
 		})
 		for _, w := range want {
 			if round.Status == w {
-				return round
+				return
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	f.t.Fatalf("round %s did not reach %v", id, want)
-	return domain.Round{}
 }
 
 func (f *fixture) runs(roundID domain.ID) []domain.Run {

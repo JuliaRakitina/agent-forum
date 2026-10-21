@@ -82,12 +82,14 @@ func (db *DB) Migrate(ctx context.Context) error {
 	for rows.Next() {
 		var v int
 		if err := rows.Scan(&v); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		applied[v] = true
 	}
-	rows.Close()
+	if err := rows.Close(); err != nil {
+		return err
+	}
 
 	entries, err := fs.ReadDir(migrationFS, "migrations")
 	if err != nil {

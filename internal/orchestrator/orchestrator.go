@@ -75,6 +75,9 @@ type Service struct {
 	// writeMu serialises write transactions with the publishing of their
 	// events, so subscribers see events in sequence order.
 	writeMu sync.Mutex
+	// pendingEnqueue collects runs created inside a transaction; commit
+	// queues them once the transaction is durable. Guarded by writeMu.
+	pendingEnqueue []domain.ID
 
 	subsMu sync.Mutex
 	subs   map[*Subscription]struct{}
@@ -255,9 +258,19 @@ func (s *Service) commit(ctx context.Context, fn func(tx *storage.Tx, emit func(
 		return nil
 	})
 	if err != nil {
+		s.pendingEnqueue = s.pendingEnqueue[:0]
 		return err
 	}
 	s.publish(events)
+	pending := s.pendingEnqueue
+	s.pendingEnqueue = nil
+	for _, id := range pending {
+		if err := s.enqueue(id); err != nil {
+			s.writeMu.Unlock()
+			s.fail(id, err)
+			s.writeMu.Lock()
+		}
+	}
 	return nil
 }
 
@@ -565,7 +578,7 @@ func (s *Service) execute(runID domain.ID) {
 	prep, err := s.prepare(ctx, runID)
 	if err != nil {
 		if !errors.Is(err, errSkipped) {
-			s.fail(runID, domain.RunFailed, err)
+			s.fail(runID, err)
 		}
 		return
 	}
@@ -573,7 +586,7 @@ func (s *Service) execute(runID domain.ID) {
 
 	r, err := s.runners.Lookup(prep.participant.Provider)
 	if err != nil {
-		s.fail(runID, domain.RunFailed, err)
+		s.fail(runID, err)
 		return
 	}
 
@@ -760,12 +773,12 @@ func (s *Service) finish(prep *prepared, res runner.Result, runErr error) {
 		return s.settleRound(tx, emit, run.RoundID)
 	})
 	if err != nil {
-		s.fail(prep.run.ID, domain.RunFailed, err)
+		s.fail(prep.run.ID, err)
 	}
 }
 
-// fail records an error for a run that could not be executed.
-func (s *Service) fail(runID domain.ID, status domain.RunStatus, cause error) {
+// fail marks a run failed with the given cause, unless it already ended.
+func (s *Service) fail(runID domain.ID, cause error) {
 	_ = s.commit(context.Background(), func(tx *storage.Tx, emit func(domain.Event)) error {
 		run, err := tx.GetRun(runID)
 		if err != nil {
@@ -774,7 +787,7 @@ func (s *Service) fail(runID domain.ID, status domain.RunStatus, cause error) {
 		if run.Status.Terminal() {
 			return nil
 		}
-		run.Status = status
+		run.Status = domain.RunFailed
 		run.Error = cause.Error()
 		run.FinishedAt = time.Now().UTC()
 		if err := tx.UpdateRun(run); err != nil {
@@ -832,7 +845,7 @@ func (s *Service) settleRound(tx *storage.Tx, emit func(domain.Event), roundID d
 				return err
 			}
 			emit(runStatusEvent(run))
-			s.deferEnqueue(run.ID)
+			s.pendingEnqueue = append(s.pendingEnqueue, run.ID)
 			return nil
 		}
 		round.Status = domain.RoundPartial
@@ -875,20 +888,6 @@ func (s *Service) reveal(tx *storage.Tx, emit func(domain.Event), round domain.R
 	}
 	emit(domain.NewEvent(domain.EventRoundStatusChanged, round.TopicID, domain.RoundStatusPayload{RoundID: round.ID, Status: round.Status}))
 	return nil
-}
-
-// deferEnqueue queues a run created inside a transaction once the
-// transaction has committed. The queue is buffered, so pushing from a
-// goroutine after a short delay is enough; a full queue is reported by
-// marking the run failed.
-func (s *Service) deferEnqueue(id domain.ID) {
-	go func() {
-		s.writeMu.Lock() // waits for the creating transaction to commit
-		s.writeMu.Unlock()
-		if err := s.enqueue(id); err != nil {
-			s.fail(id, domain.RunFailed, err)
-		}
-	}()
 }
 
 func (s *Service) emitTool(run domain.Run, ev runner.Event) {

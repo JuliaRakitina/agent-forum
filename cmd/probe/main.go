@@ -25,7 +25,9 @@ import (
 	"agent-forum/internal/runners/codex"
 )
 
-func main() {
+func main() { os.Exit(run()) }
+
+func run() int {
 	var (
 		provider  = flag.String("provider", "claude", "claude, codex or fake")
 		binary    = flag.String("binary", "", "executable to run (default: provider name on PATH)")
@@ -50,9 +52,9 @@ func main() {
 		var err error
 		dir, err = os.MkdirTemp("", "forum-probe-")
 		if err != nil {
-			fatal(err)
+			return fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() { _ = os.RemoveAll(dir) }()
 	}
 	dir, _ = filepath.Abs(dir)
 
@@ -76,20 +78,18 @@ func main() {
 		r = claude.New(*binary)
 		if *printArgs {
 			inv, err := claude.BuildInvocation(req)
-			printInvocation("claude", inv.Args, inv.Env, inv.Stdin, err)
-			return
+			return printInvocation("claude", inv.Args, inv.Env, inv.Stdin, err)
 		}
 	case domain.ProviderCodex:
 		r = codex.New(*binary)
 		if *printArgs {
 			inv, err := codex.BuildInvocation(req)
-			printInvocation("codex", inv.Args, inv.Env, inv.Stdin, err)
-			return
+			return printInvocation("codex", inv.Args, inv.Env, inv.Stdin, err)
 		}
 	case domain.ProviderFake:
 		r = fake.New()
 	default:
-		fatal(fmt.Errorf("unknown provider %q", *provider))
+		return fatal(fmt.Errorf("unknown provider %q", *provider))
 	}
 
 	fmt.Fprintf(os.Stderr, "probe: provider=%s profile=%s tools=%s isolation=%s workdir=%s\n", *provider, *profile, *tools, *isolation, dir)
@@ -116,18 +116,19 @@ func main() {
 	switch {
 	case err == nil:
 		fmt.Fprintln(os.Stderr, "probe: OK")
+		return 0
 	case errors.Is(err, runner.ErrCancelled):
 		fmt.Fprintln(os.Stderr, "probe: cancelled, partial text kept")
-		os.Exit(130)
+		return 130
 	default:
 		fmt.Fprintf(os.Stderr, "probe: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 }
 
-func printInvocation(bin string, args []string, env map[string]string, stdin string, err error) {
+func printInvocation(bin string, args []string, env map[string]string, stdin string, err error) int {
 	if err != nil {
-		fatal(err)
+		return fatal(err)
 	}
 	for k, v := range env {
 		fmt.Printf("%s=%s ", k, v)
@@ -137,6 +138,7 @@ func printInvocation(bin string, args []string, env map[string]string, stdin str
 		fmt.Printf(" %s", shellQuote(a))
 	}
 	fmt.Printf("\n--- stdin (%d bytes) ---\n%s\n", len(stdin), stdin)
+	return 0
 }
 
 // shellQuote renders an argument for display only; the probe never runs a
@@ -151,7 +153,7 @@ func shellQuote(s string) string {
 	return s
 }
 
-func fatal(err error) {
+func fatal(err error) int {
 	fmt.Fprintf(os.Stderr, "probe: %v\n", err)
-	os.Exit(2)
+	return 2
 }

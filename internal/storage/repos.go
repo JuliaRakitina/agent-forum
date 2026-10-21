@@ -39,7 +39,7 @@ func (t *Tx) ListWorkspaces() ([]domain.Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.Workspace
 	for rows.Next() {
 		var w domain.Workspace
@@ -90,7 +90,7 @@ func (t *Tx) ListTopics(workspaceID domain.ID) ([]domain.Topic, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.Topic
 	for rows.Next() {
 		tp, err := scanTopic(rows)
@@ -147,7 +147,7 @@ func (t *Tx) ListParticipants(workspaceID domain.ID) ([]domain.Participant, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.Participant
 	for rows.Next() {
 		p, err := scanParticipant(rows)
@@ -240,7 +240,7 @@ func (t *Tx) ListMessages(q MessageQuery) ([]domain.Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.Message
 	for rows.Next() {
 		m, err := scanMessage(rows)
@@ -264,12 +264,14 @@ func (t *Tx) RevealRoundMessages(roundID domain.ID) ([]domain.Message, error) {
 	for rows.Next() {
 		m, err := scanMessage(rows)
 		if err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		sealed = append(sealed, m)
 	}
-	rows.Close()
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -356,7 +358,7 @@ func (t *Tx) ListRoundsByStatus(statuses ...domain.RoundStatus) ([]domain.Round,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.Round
 	for rows.Next() {
 		r, err := scanRound(rows)
@@ -374,7 +376,7 @@ func (t *Tx) ListRoundsByTopic(topicID domain.ID) ([]domain.Round, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.Round
 	for rows.Next() {
 		r, err := scanRound(rows)
@@ -470,7 +472,7 @@ func (t *Tx) listRuns(where string, args ...any) ([]domain.Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.Run
 	for rows.Next() {
 		r, err := scanRun(rows)
@@ -494,7 +496,7 @@ func (t *Tx) RunOutput(runID domain.ID) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var b strings.Builder
 	for rows.Next() {
 		var s string
@@ -571,7 +573,7 @@ func (t *Tx) ListContextRevisions(topicID domain.ID) ([]domain.ContextRevision, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.ContextRevision
 	for rows.Next() {
 		r, err := scanRevision(rows)
@@ -615,7 +617,7 @@ func (t *Tx) ListArtifactVersions(topicID domain.ID) ([]domain.ArtifactVersion, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.ArtifactVersion
 	for rows.Next() {
 		var av domain.ArtifactVersion
@@ -660,7 +662,7 @@ func (t *Tx) ListEvents(after int64, limit int) ([]domain.Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.Event
 	for rows.Next() {
 		var ev domain.Event

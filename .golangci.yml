@@ -1,0 +1,26 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
