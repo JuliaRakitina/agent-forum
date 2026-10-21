@@ -48,7 +48,8 @@ type initMessage struct {
 }
 
 type streamEvent struct {
-	Event struct {
+	ParentToolUseID *string `json:"parent_tool_use_id"`
+	Event           struct {
 		Type  string `json:"type"`
 		Delta struct {
 			Type string `json:"type"`
@@ -126,6 +127,9 @@ func (p *Parser) Feed(line string) []runner.Event {
 		var ev streamEvent
 		if err := json.Unmarshal([]byte(line), &ev); err != nil {
 			return nil
+		}
+		if ev.ParentToolUseID != nil && *ev.ParentToolUseID != "" {
+			return nil // subagent traffic is not part of the answer
 		}
 		if ev.Event.Type == "content_block_delta" && ev.Event.Delta.Type == "text_delta" && ev.Event.Delta.Text != "" {
 			p.sawDelta = true

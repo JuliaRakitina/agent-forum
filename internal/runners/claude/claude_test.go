@@ -129,6 +129,14 @@ func TestParserStream(t *testing.T) {
 	}
 }
 
+func TestParserIgnoresSubagentDeltas(t *testing.T) {
+	p := NewParser()
+	evs := p.Feed(`{"type":"stream_event","parent_tool_use_id":"tu-9","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"inner"}}}`)
+	if len(evs) != 0 || p.Text.Len() != 0 {
+		t.Fatalf("subagent delta leaked: %+v", evs)
+	}
+}
+
 func TestParserWithoutPartialMessagesUsesAssistantText(t *testing.T) {
 	p := NewParser()
 	p.Feed(`{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"Full answer"}]}}`)

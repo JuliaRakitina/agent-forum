@@ -25,6 +25,10 @@ type streamer struct {
 	buf   strings.Builder
 	index int
 	timer *time.Timer
+	// flushMu is held from index assignment through the commit, so chunks
+	// are committed in index order even when a timer flush and a size
+	// flush race, and a final flush waits for an in-flight one.
+	flushMu sync.Mutex
 }
 
 func newStreamer(svc *Service, runID, topicID domain.ID, sealed bool, interval time.Duration, maxBytes int) *streamer {
@@ -50,6 +54,8 @@ func (st *streamer) write(text string) {
 
 // flush persists and publishes the buffered text as one chunk.
 func (st *streamer) flush() {
+	st.flushMu.Lock()
+	defer st.flushMu.Unlock()
 	st.mu.Lock()
 	if st.timer != nil {
 		st.timer.Stop()
@@ -65,7 +71,7 @@ func (st *streamer) flush() {
 	st.index++
 	st.mu.Unlock()
 
-	_ = st.svc.commit(context.Background(), func(tx *storage.Tx, emit func(domain.Event)) error {
+	_ = st.svc.Commit(context.Background(), func(tx *storage.Tx, emit func(domain.Event)) error {
 		if err := tx.AppendRunOutput(st.runID, index, text); err != nil {
 			return err
 		}

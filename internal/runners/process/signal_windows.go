@@ -9,6 +9,8 @@ import "os/exec"
 // a job object and is left for the Windows port.
 func setSysProcAttr(cmd *exec.Cmd) {}
 
+func alive(cmd *exec.Cmd) bool { return cmd.Process != nil }
+
 func interrupt(cmd *exec.Cmd) error { return nil }
 
 func kill(cmd *exec.Cmd) error {

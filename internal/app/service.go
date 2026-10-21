@@ -142,7 +142,7 @@ func (s *Service) CreateWorkspace(ctx context.Context, name, rootDir string) (do
 	}
 	now := time.Now().UTC()
 	ws := domain.Workspace{ID: domain.NewID(), Name: name, RootDir: rootDir, CreatedAt: now}
-	err := s.db.Update(ctx, func(tx *storage.Tx) error {
+	err := s.orch.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		if err := tx.CreateWorkspace(ws); err != nil {
 			return err
 		}
@@ -150,6 +150,7 @@ func (s *Service) CreateWorkspace(ctx context.Context, name, rootDir string) (do
 			if err := tx.PutParticipant(p); err != nil {
 				return err
 			}
+			emit(domain.NewEvent(domain.EventParticipantChanged, "", domain.ParticipantPayload{Participant: p}))
 		}
 		return nil
 	})
@@ -226,12 +227,12 @@ func (s *Service) SaveParticipant(ctx context.Context, p domain.Participant) (do
 		p.ID = domain.NewID()
 		p.Enabled = true
 	}
-	err = s.db.Update(ctx, func(tx *storage.Tx) error {
+	err = s.orch.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		if err := tx.PutParticipant(p); err != nil {
 			return err
 		}
-		ev := domain.NewEvent(domain.EventParticipantChanged, "", domain.ParticipantPayload{Participant: p})
-		return tx.AppendEvent(&ev)
+		emit(domain.NewEvent(domain.EventParticipantChanged, "", domain.ParticipantPayload{Participant: p}))
+		return nil
 	})
 	return p, err
 }
@@ -260,15 +261,15 @@ func (s *Service) CreateTopic(ctx context.Context, workspaceID domain.ID, title 
 	}
 	now := time.Now().UTC()
 	tp := domain.Topic{ID: domain.NewID(), WorkspaceID: workspaceID, Title: title, Kind: kind, CreatedAt: now, UpdatedAt: now}
-	err := s.db.Update(ctx, func(tx *storage.Tx) error {
+	err := s.orch.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		if _, err := tx.GetWorkspace(workspaceID); err != nil {
 			return err
 		}
 		if err := tx.CreateTopic(tp); err != nil {
 			return err
 		}
-		ev := domain.NewEvent(domain.EventTopicCreated, tp.ID, domain.TopicPayload{Topic: tp})
-		return tx.AppendEvent(&ev)
+		emit(domain.NewEvent(domain.EventTopicCreated, tp.ID, domain.TopicPayload{Topic: tp}))
+		return nil
 	})
 	return tp, err
 }
@@ -367,7 +368,7 @@ func (s *Service) PostMessage(ctx context.Context, in PostInput) (PostResult, er
 		Body: body, Mentions: in.Mentions, Visibility: domain.VisibilityVisible, CreatedAt: now,
 	}
 	var targets []domain.ID
-	err := s.db.Update(ctx, func(tx *storage.Tx) error {
+	err := s.orch.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		tp, err := tx.GetTopic(in.TopicID)
 		if err != nil {
 			return err
@@ -403,8 +404,8 @@ func (s *Service) PostMessage(ctx context.Context, in PostInput) (PostResult, er
 		if err := tx.TouchTopic(tp.ID, now); err != nil {
 			return err
 		}
-		ev := domain.NewEvent(domain.EventMessageCreated, msg.TopicID, domain.MessagePayload{Message: msg})
-		return tx.AppendEvent(&ev)
+		emit(domain.NewEvent(domain.EventMessageCreated, msg.TopicID, domain.MessagePayload{Message: msg}))
+		return nil
 	})
 	if err != nil {
 		return PostResult{}, err
@@ -472,9 +473,28 @@ func (s *Service) EvaluateRound(ctx context.Context, roundID domain.ID, autoReve
 	if original.Status != domain.RoundRevealed {
 		return domain.Round{}, fmt.Errorf("round is %s, only a revealed round can be evaluated", original.Status)
 	}
+	var judges []domain.ID
+	err = s.db.View(ctx, func(tx *storage.Tx) error {
+		for _, id := range original.ParticipantIDs {
+			p, err := tx.GetParticipant(id)
+			if err != nil {
+				return err
+			}
+			if p.Enabled && p.Provider != domain.ProviderHuman {
+				judges = append(judges, id)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.Round{}, err
+	}
+	if len(judges) == 0 {
+		return domain.Round{}, errors.New("no enabled participant can evaluate this round")
+	}
 	return s.orch.StartRound(ctx, orchestrator.RoundSpec{
 		TopicID: original.TopicID, Kind: domain.RoundIndependent, Prompt: EvaluationPrompt,
-		ParticipantIDs: original.ParticipantIDs, AutoReveal: autoReveal,
+		ParticipantIDs: judges, AutoReveal: autoReveal,
 	})
 }
 
@@ -510,15 +530,15 @@ var ErrSealed = errors.New("run output is sealed until the round is revealed")
 // SaveContext stores a human-authored, accepted revision of the context.
 func (s *Service) SaveContext(ctx context.Context, topicID domain.ID, doc domain.ContextDoc) (domain.ContextRevision, error) {
 	rev := domain.ContextRevision{ID: domain.NewID(), TopicID: topicID, Status: domain.RevisionAccepted, AuthorKind: domain.AuthorHuman, Doc: doc, CreatedAt: time.Now().UTC()}
-	err := s.db.Update(ctx, func(tx *storage.Tx) error {
+	err := s.orch.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		if _, err := tx.GetTopic(topicID); err != nil {
 			return err
 		}
 		if err := tx.CreateContextRevision(&rev); err != nil {
 			return err
 		}
-		ev := domain.NewEvent(domain.EventContextRevised, topicID, domain.ContextRevisedPayload{Revision: rev})
-		return tx.AppendEvent(&ev)
+		emit(domain.NewEvent(domain.EventContextRevised, topicID, domain.ContextRevisedPayload{Revision: rev}))
+		return nil
 	})
 	return rev, err
 }
@@ -539,7 +559,7 @@ func (s *Service) SetContextRevisionStatus(ctx context.Context, revisionID domai
 	if status != domain.RevisionAccepted && status != domain.RevisionDiscarded {
 		return fmt.Errorf("status must be accepted or discarded, got %q", status)
 	}
-	return s.db.Update(ctx, func(tx *storage.Tx) error {
+	return s.orch.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		rev, err := tx.GetContextRevision(revisionID)
 		if err != nil {
 			return err
@@ -548,8 +568,8 @@ func (s *Service) SetContextRevisionStatus(ctx context.Context, revisionID domai
 			return err
 		}
 		rev.Status = status
-		ev := domain.NewEvent(domain.EventContextRevised, rev.TopicID, domain.ContextRevisedPayload{Revision: rev})
-		return tx.AppendEvent(&ev)
+		emit(domain.NewEvent(domain.EventContextRevised, rev.TopicID, domain.ContextRevisedPayload{Revision: rev}))
+		return nil
 	})
 }
 

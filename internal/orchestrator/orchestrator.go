@@ -134,7 +134,7 @@ func (s *Service) Stop() {
 // Recover marks runs and rounds left over from a previous process as
 // interrupted. Call it before Start.
 func (s *Service) Recover(ctx context.Context) error {
-	return s.commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
+	return s.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		runs, err := tx.ListRunsByStatus(domain.RunQueued, domain.RunRunning)
 		if err != nil {
 			return err
@@ -237,10 +237,12 @@ func (s *Service) publish(events []domain.Event) {
 	}
 }
 
-// commit runs fn in a write transaction, appends the events it emitted in
+// Commit runs fn in a write transaction, appends the events it emitted in
 // the same transaction and publishes them after the commit, all under the
-// write lock so that publication order equals sequence order.
-func (s *Service) commit(ctx context.Context, fn func(tx *storage.Tx, emit func(domain.Event)) error) error {
+// write lock so that publication order equals sequence order. Every write
+// that emits events, in this package or in the application layer, goes
+// through here.
+func (s *Service) Commit(ctx context.Context, fn func(tx *storage.Tx, emit func(domain.Event)) error) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	var events []domain.Event
@@ -267,7 +269,7 @@ func (s *Service) commit(ctx context.Context, fn func(tx *storage.Tx, emit func(
 	for _, id := range pending {
 		if err := s.enqueue(id); err != nil {
 			s.writeMu.Unlock()
-			s.fail(id, err)
+			s.end(id, domain.RunFailed, err)
 			s.writeMu.Lock()
 		}
 	}
@@ -301,8 +303,7 @@ func (s *Service) StartRound(ctx context.Context, spec RoundSpec) (domain.Round,
 		return domain.Round{}, errors.New("orchestrator: single round takes one participant")
 	}
 	var round domain.Round
-	var queued []domain.ID
-	err := s.commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
+	err := s.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		now := time.Now().UTC()
 		inputs, err := s.freezeInputs(tx, spec.TopicID, spec.TriggerMessageID)
 		if err != nil {
@@ -326,17 +327,14 @@ func (s *Service) StartRound(ctx context.Context, spec RoundSpec) (domain.Round,
 				return err
 			}
 			emit(runStatusEvent(run))
-			queued = append(queued, run.ID)
+			s.pendingEnqueue = append(s.pendingEnqueue, run.ID)
 		}
-		if err := tx.TouchTopic(spec.TopicID, now); err != nil {
-			return err
-		}
-		return nil
+		return tx.TouchTopic(spec.TopicID, now)
 	})
 	if err != nil {
 		return domain.Round{}, err
 	}
-	return round, s.enqueue(queued...)
+	return round, nil
 }
 
 // CancelRun stops a queued or running run.
@@ -348,7 +346,7 @@ func (s *Service) CancelRun(ctx context.Context, runID domain.ID) error {
 		cancel()
 		return nil
 	}
-	return s.commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
+	return s.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		run, err := tx.GetRun(runID)
 		if err != nil {
 			return err
@@ -370,7 +368,7 @@ func (s *Service) CancelRun(ctx context.Context, runID domain.ID) error {
 // cancelled.
 func (s *Service) CancelRound(ctx context.Context, roundID domain.ID) error {
 	var toCancel []domain.ID
-	err := s.commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
+	err := s.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		round, err := tx.GetRound(roundID)
 		if err != nil {
 			return err
@@ -418,12 +416,26 @@ func (s *Service) CancelRound(ctx context.Context, roundID domain.ID) error {
 }
 
 // RevealRound makes the sealed results of a round visible. It is allowed
-// from awaiting_reveal and, explicitly, from partial.
+// from awaiting_reveal and, explicitly, from partial; a round with runs
+// still queued or running cannot be revealed, so a failed run never
+// exposes a partial result while another participant is working.
 func (s *Service) RevealRound(ctx context.Context, roundID domain.ID) error {
-	return s.commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
+	return s.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		round, err := tx.GetRound(roundID)
 		if err != nil {
 			return err
+		}
+		if round.Status != domain.RoundAwaitingReveal && round.Status != domain.RoundPartial {
+			return fmt.Errorf("orchestrator: round is %s, only awaiting_reveal or partial rounds can be revealed", round.Status)
+		}
+		runs, err := tx.ListRunsByRound(roundID)
+		if err != nil {
+			return err
+		}
+		for _, run := range runs {
+			if !run.Status.Terminal() {
+				return fmt.Errorf("orchestrator: run %s is still %s", run.ID, run.Status)
+			}
 		}
 		return s.reveal(tx, emit, round)
 	})
@@ -432,8 +444,7 @@ func (s *Service) RevealRound(ctx context.Context, roundID domain.ID) error {
 // RetryRound queues new runs for the participants of a partial round that
 // have no successful run yet.
 func (s *Service) RetryRound(ctx context.Context, roundID domain.ID) error {
-	var queued []domain.ID
-	err := s.commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
+	return s.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		round, err := tx.GetRound(roundID)
 		if err != nil {
 			return err
@@ -462,7 +473,7 @@ func (s *Service) RetryRound(ctx context.Context, roundID domain.ID) error {
 				return err
 			}
 			emit(runStatusEvent(run))
-			queued = append(queued, run.ID)
+			s.pendingEnqueue = append(s.pendingEnqueue, run.ID)
 			if round.Kind != domain.RoundIndependent {
 				break
 			}
@@ -474,10 +485,6 @@ func (s *Service) RetryRound(ctx context.Context, roundID domain.ID) error {
 		emit(domain.NewEvent(domain.EventRoundStatusChanged, round.TopicID, domain.RoundStatusPayload{RoundID: round.ID, Status: round.Status}))
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	return s.enqueue(queued...)
 }
 
 // --- internals ------------------------------------------------------------
@@ -552,6 +559,9 @@ func (s *Service) worker() {
 		case <-s.lifecycle.Done():
 			return
 		case id := <-s.queue:
+			if s.lifecycle.Err() != nil {
+				return // leave the run queued; Recover marks it interrupted
+			}
 			s.execute(id)
 		}
 	}
@@ -560,12 +570,14 @@ func (s *Service) worker() {
 // execute runs one queued run end to end.
 func (s *Service) execute(runID domain.ID) {
 	ctx, cancel := context.WithCancel(s.lifecycle)
+	defer cancel()
 	if s.cfg.RunTimeout > 0 {
 		// The orchestrator owns the timeout so every adapter, including
 		// fakes, is bounded the same way.
-		ctx, cancel = context.WithTimeout(ctx, s.cfg.RunTimeout)
+		var cancelTimeout context.CancelFunc
+		ctx, cancelTimeout = context.WithTimeout(ctx, s.cfg.RunTimeout)
+		defer cancelTimeout()
 	}
-	defer cancel()
 	s.mu.Lock()
 	s.active[runID] = cancel
 	s.mu.Unlock()
@@ -577,8 +589,14 @@ func (s *Service) execute(runID domain.ID) {
 
 	prep, err := s.prepare(ctx, runID)
 	if err != nil {
-		if !errors.Is(err, errSkipped) {
-			s.fail(runID, err)
+		switch {
+		case errors.Is(err, errSkipped):
+		case s.lifecycle.Err() != nil:
+			// Stopping: leave the run as it is for Recover.
+		case ctx.Err() != nil:
+			s.end(runID, statusForContext(ctx), err)
+		default:
+			s.end(runID, domain.RunFailed, err)
 		}
 		return
 	}
@@ -586,7 +604,7 @@ func (s *Service) execute(runID domain.ID) {
 
 	r, err := s.runners.Lookup(prep.participant.Provider)
 	if err != nil {
-		s.fail(runID, err)
+		s.end(runID, domain.RunFailed, err)
 		return
 	}
 
@@ -598,7 +616,7 @@ func (s *Service) execute(runID domain.ID) {
 			stream.write(ev.Text)
 		case runner.EventTool:
 			stream.flush()
-			s.emitTool(prep.run, ev)
+			s.emitTool(prep.run, ev, sealed)
 		case runner.EventStarted, runner.EventStatus, runner.EventLog:
 			// Diagnostics only; the native session ID is taken from the
 			// result.
@@ -622,7 +640,7 @@ type prepared struct {
 // prepare moves the run to running and assembles its request.
 func (s *Service) prepare(ctx context.Context, runID domain.ID) (*prepared, error) {
 	var prep prepared
-	err := s.commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
+	err := s.Commit(ctx, func(tx *storage.Tx, emit func(domain.Event)) error {
 		run, err := tx.GetRun(runID)
 		if err != nil {
 			return err
@@ -735,7 +753,7 @@ func (s *Service) finish(prep *prepared, res runner.Result, runErr error) {
 		status, errText = domain.RunFailed, runErr.Error()
 	}
 	sealed := prep.round != nil && prep.round.Kind == domain.RoundIndependent
-	err := s.commit(context.Background(), func(tx *storage.Tx, emit func(domain.Event)) error {
+	err := s.Commit(context.Background(), func(tx *storage.Tx, emit func(domain.Event)) error {
 		run, err := tx.GetRun(prep.run.ID)
 		if err != nil {
 			return err
@@ -773,13 +791,22 @@ func (s *Service) finish(prep *prepared, res runner.Result, runErr error) {
 		return s.settleRound(tx, emit, run.RoundID)
 	})
 	if err != nil {
-		s.fail(prep.run.ID, err)
+		s.end(prep.run.ID, domain.RunFailed, err)
 	}
 }
 
-// fail marks a run failed with the given cause, unless it already ended.
-func (s *Service) fail(runID domain.ID, cause error) {
-	_ = s.commit(context.Background(), func(tx *storage.Tx, emit func(domain.Event)) error {
+// statusForContext maps a cancelled context to the run status it implies.
+func statusForContext(ctx context.Context) domain.RunStatus {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return domain.RunTimedOut
+	}
+	return domain.RunCancelled
+}
+
+// end records a terminal status for a run that produced no result, unless
+// it already ended.
+func (s *Service) end(runID domain.ID, status domain.RunStatus, cause error) {
+	_ = s.Commit(context.Background(), func(tx *storage.Tx, emit func(domain.Event)) error {
 		run, err := tx.GetRun(runID)
 		if err != nil {
 			return err
@@ -787,7 +814,7 @@ func (s *Service) fail(runID domain.ID, cause error) {
 		if run.Status.Terminal() {
 			return nil
 		}
-		run.Status = domain.RunFailed
+		run.Status = status
 		run.Error = cause.Error()
 		run.FinishedAt = time.Now().UTC()
 		if err := tx.UpdateRun(run); err != nil {
@@ -890,10 +917,16 @@ func (s *Service) reveal(tx *storage.Tx, emit func(domain.Event), round domain.R
 	return nil
 }
 
-func (s *Service) emitTool(run domain.Run, ev runner.Event) {
-	_ = s.commit(context.Background(), func(tx *storage.Tx, emit func(domain.Event)) error {
+// emitTool publishes a tool activity summary. For a sealed run only the
+// tool name and status are published: a summary could quote the answer.
+func (s *Service) emitTool(run domain.Run, ev runner.Event, sealed bool) {
+	summary := ev.Text
+	if sealed {
+		summary = ""
+	}
+	_ = s.Commit(context.Background(), func(tx *storage.Tx, emit func(domain.Event)) error {
 		emit(domain.NewEvent(domain.EventRunToolActivity, run.TopicID, domain.RunToolActivityPayload{
-			RunID: run.ID, Tool: ev.Tool, Summary: ev.Text, Status: ev.ToolStatus,
+			RunID: run.ID, Tool: ev.Tool, Summary: summary, Status: ev.ToolStatus,
 		}))
 		return nil
 	})

@@ -103,6 +103,30 @@ func TestCancelKillsAfterGraceWhenInterruptIgnored(t *testing.T) {
 	}
 }
 
+func TestNaturalExitWhileGrandchildHoldsPipeIsNotInterrupted(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	// The shell exits at once; the background sleep keeps stdout open, so
+	// Wait blocks until the grace period kills the group.
+	h, err := Start(ctx, Spec{
+		Path:        sh(t),
+		Args:        []string{"-c", `echo done; sleep 30 & exit 0`},
+		GracePeriod: 300 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first := <-h.Lines(); first != "done" {
+		t.Fatalf("first line %q", first)
+	}
+	time.Sleep(100 * time.Millisecond) // let the shell exit and be reaped
+	cancel()
+	collect(h)
+	code, werr := h.Wait()
+	if errors.Is(werr, ErrInterrupted) {
+		t.Fatalf("a process that exited on its own must not be reported as interrupted (code=%d err=%v)", code, werr)
+	}
+}
+
 func TestEnvOverrideAndDir(t *testing.T) {
 	dir := t.TempDir()
 	h, err := Start(context.Background(), Spec{

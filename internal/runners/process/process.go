@@ -126,8 +126,12 @@ func (h *Handle) supervise(ctx context.Context, grace time.Duration, splitter *l
 		h.finish(err, false, splitter)
 		return
 	case <-ctx.Done():
-		interrupted = true
-		_ = interrupt(h.cmd)
+		// The child may already have exited while Wait is still draining a
+		// pipe held open by a grandchild; such a run was not interrupted.
+		if alive(h.cmd) {
+			interrupted = true
+			_ = interrupt(h.cmd)
+		}
 	}
 	select {
 	case err := <-waitErr:

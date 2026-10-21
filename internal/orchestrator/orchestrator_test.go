@@ -303,6 +303,86 @@ func TestJointRoundRunsSequentiallyWithPreviousAnswers(t *testing.T) {
 	}
 }
 
+func TestRevealRefusedWhileARunIsStillWorking(t *testing.T) {
+	f := newFixture(t, Config{Workers: 2})
+	f.fake.Script("fail-fast", fake.Script{Chunks: []string{"half"}, FailAfter: 0})
+	// A fails at once, B hangs: the round must stay running and unrevealable.
+	f.fake.Next = fake.Script{Chunks: []string{"x"}, FailAfter: -1, Hang: true}
+	round, err := f.svc.StartRound(context.Background(), RoundSpec{TopicID: f.tp.ID, Kind: domain.RoundIndependent, Prompt: "p", ParticipantIDs: []domain.ID{f.a.ID, f.b.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Make one of the two runs fail by cancelling it; the other keeps hanging.
+	first := <-f.fake.Started
+	<-f.fake.Started
+	if err := f.svc.CancelRun(context.Background(), first.RunID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		runs := f.runs(round.ID)
+		if runs[0].Status == domain.RunCancelled || runs[1].Status == domain.RunCancelled {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := f.svc.RevealRound(context.Background(), round.ID); err == nil {
+		t.Fatal("reveal must be refused while a run is still running")
+	}
+	if visible := f.messages(false); len(visible) != 1 {
+		t.Fatalf("partial result leaked: %+v", visible)
+	}
+	if err := f.svc.CancelRound(context.Background(), round.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.waitRound(round.ID, domain.RoundCancelled)
+}
+
+func TestSealedRunsPublishNoToolSummary(t *testing.T) {
+	f := newFixture(t, Config{Workers: 2})
+	f.fake.Next = fake.Script{Chunks: []string{"secret"}, FailAfter: -1, Tool: "Bash"}
+	round, err := f.svc.StartRound(context.Background(), RoundSpec{TopicID: f.tp.ID, Kind: domain.RoundIndependent, Prompt: "p", ParticipantIDs: []domain.ID{f.a.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.waitRound(round.ID, domain.RoundAwaitingReveal)
+	seen := false
+	for _, ev := range f.drain() {
+		if ev.Type == domain.EventRunToolActivity {
+			var p domain.RunToolActivityPayload
+			_ = json.Unmarshal(ev.Payload, &p)
+			if p.Summary != "" || p.Tool != "Bash" {
+				t.Fatalf("sealed tool summary leaked: %+v", p)
+			}
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatal("tool activity event missing")
+	}
+}
+
+func TestCancelWhileQueuedBehindWorkerIsCancelledNotFailed(t *testing.T) {
+	f := newFixture(t, Config{Workers: 1})
+	f.fake.Next = fake.Script{Chunks: []string{"x"}, FailAfter: -1, Hang: true}
+	r1, _ := f.svc.StartRound(context.Background(), RoundSpec{TopicID: f.tp.ID, Kind: domain.RoundSingle, Prompt: "p", ParticipantIDs: []domain.ID{f.a.ID}})
+	<-f.fake.Started
+	r2, _ := f.svc.StartRound(context.Background(), RoundSpec{TopicID: f.tp.ID, Kind: domain.RoundSingle, Prompt: "p", ParticipantIDs: []domain.ID{f.b.ID}})
+	queued := f.runs(r2.ID)[0]
+	if queued.Status != domain.RunQueued {
+		t.Fatalf("second run should be queued: %+v", queued)
+	}
+	if err := f.svc.CancelRun(context.Background(), queued.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.waitRound(r2.ID, domain.RoundPartial)
+	if got := f.runs(r2.ID)[0]; got.Status != domain.RunCancelled {
+		t.Fatalf("queued run: %+v", got)
+	}
+	_ = f.svc.CancelRound(context.Background(), r1.ID)
+	f.waitRound(r1.ID, domain.RoundCancelled)
+}
+
 func TestCancelRunningRunAndTimeout(t *testing.T) {
 	f := newFixture(t, Config{Workers: 1, RunTimeout: 200 * time.Millisecond})
 	f.fake.Next = fake.Script{Chunks: []string{"partial"}, FailAfter: -1, Hang: true}

@@ -86,6 +86,7 @@ func (p *Parser) Feed(line string) []runner.Event {
 		return nil
 	case "turn.completed":
 		p.finished = true
+		p.failure = "" // an earlier error event was recovered from
 		if env.Usage != nil {
 			p.usage = domain.Usage{
 				InputTokens:  env.Usage.InputTokens,

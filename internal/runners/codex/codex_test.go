@@ -128,6 +128,17 @@ func TestParserFailureAndEarlyExit(t *testing.T) {
 	}
 }
 
+func TestParserRecoveredErrorStillCompletes(t *testing.T) {
+	p := NewParser()
+	p.Feed(`{"type":"error","message":"transient"}`)
+	p.Feed(`{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"ok"}}`)
+	p.Feed(`{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}`)
+	res, errText, ok := p.Result()
+	if !ok || errText != "" || res.Partial || res.Text != "ok" {
+		t.Fatalf("%+v %q %v", res, errText, ok)
+	}
+}
+
 func TestTextDelta(t *testing.T) {
 	if d := textDelta("", "abc"); d != "abc" {
 		t.Fatal(d)

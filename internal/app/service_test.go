@@ -66,13 +66,13 @@ func TestPostMessageStartsRoundAndThreadReflectsIt(t *testing.T) {
 	ws, _ := svc.EnsureWorkspace(ctx)
 	a, _ := svc.SaveParticipant(ctx, domain.Participant{WorkspaceID: ws.ID, Name: "A", Provider: domain.ProviderFake})
 	b, _ := svc.SaveParticipant(ctx, domain.Participant{WorkspaceID: ws.ID, Name: "B", Provider: domain.ProviderFake, Mode: domain.ParticipateAlways})
+	sub := svc.Subscribe(256)
+	defer sub.Close()
 	tp, err := svc.CreateTopic(ctx, ws.ID, "Design", "")
 	if err != nil || tp.Kind != domain.TopicDiscussion {
 		t.Fatalf("%+v %v", tp, err)
 	}
 	fk.Next = fake.Script{Chunks: []string{"reply"}, FailAfter: -1}
-	sub := svc.Subscribe(256)
-	defer sub.Close()
 
 	res, err := svc.PostMessage(ctx, PostInput{TopicID: tp.ID, Body: "  Hello @A  ", Mentions: []domain.ID{a.ID}, Mode: AskOne})
 	if err != nil {
@@ -104,6 +104,33 @@ func TestPostMessageStartsRoundAndThreadReflectsIt(t *testing.T) {
 	events, _ := svc.Events(ctx, 0, 100)
 	if len(events) == 0 || events[0].Type != domain.EventParticipantChanged {
 		t.Fatalf("events: %+v", events)
+	}
+	// Application-layer events are published live, in sequence order, with
+	// no gaps between them and the orchestrator's events.
+	var published []domain.Event
+	for {
+		select {
+		case ev := <-sub.C:
+			published = append(published, ev)
+			continue
+		case <-time.After(100 * time.Millisecond):
+		}
+		break
+	}
+	if len(published) == 0 {
+		t.Fatal("no events published")
+	}
+	kinds := map[domain.EventType]bool{}
+	for i, ev := range published {
+		kinds[ev.Type] = true
+		if i > 0 && ev.Seq != published[i-1].Seq+1 {
+			t.Fatalf("gap in published events: %d after %d", ev.Seq, published[i-1].Seq)
+		}
+	}
+	for _, want := range []domain.EventType{domain.EventTopicCreated, domain.EventMessageCreated, domain.EventRoundStatusChanged} {
+		if !kinds[want] {
+			t.Fatalf("event %s was not published live: %v", want, kinds)
+		}
 	}
 	if _, err := svc.RunOutput(ctx, "missing-run"); err == nil {
 		t.Fatal("unknown run must be an error")

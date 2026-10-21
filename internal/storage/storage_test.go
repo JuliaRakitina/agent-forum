@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -294,6 +295,42 @@ func TestEventLogSequence(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+func TestTimestampsSortLexically(t *testing.T) {
+	a := time.Date(2026, 10, 21, 10, 0, 0, 120000000, time.UTC)
+	b := time.Date(2026, 10, 21, 10, 0, 0, 123456789, time.UTC)
+	fa, fb := formatTime(a), formatTime(b)
+	if len(fa) != len(fb) || fa >= fb {
+		t.Fatalf("timestamps must be fixed width and ordered: %q %q", fa, fb)
+	}
+	if got := parseTime(sql.NullString{String: fa, Valid: true}); !got.Equal(a) {
+		t.Fatalf("round trip: %v != %v", got, a)
+	}
+}
+
+func TestConcurrentWritersWaitInsteadOfFailing(t *testing.T) {
+	db := openTest(t)
+	_, tp, _ := seed(t, db)
+	ctx := context.Background()
+	errs := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func(i int) {
+			errs <- db.Update(ctx, func(tx *Tx) error {
+				if _, err := tx.GetTopic(tp.ID); err != nil { // read first, then write
+					return err
+				}
+				time.Sleep(100 * time.Millisecond)
+				ev := domain.NewEvent(domain.EventTopicCreated, tp.ID, nil)
+				return tx.AppendEvent(&ev)
+			})
+		}(i)
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("writer failed: %v", err)
+		}
+	}
 }
 
 func errorsJoin(what string, err error, _ any) error {

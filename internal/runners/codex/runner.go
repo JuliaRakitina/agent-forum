@@ -76,12 +76,14 @@ func (r *Runner) Run(ctx context.Context, req runner.Request, sink runner.Sink) 
 		return res, runner.ErrCancelled
 	case errText != "":
 		return res, fmt.Errorf("%w: %s", runner.ErrProcess, errText)
+	case finished:
+		// A completed turn counts even if the process then exited with an
+		// error, for example a grandchild outliving the wait delay.
+		return res, nil
 	case runErr != nil:
 		return res, fmt.Errorf("%w: %v: %s", runner.ErrProcess, runErr, tail(stderr))
-	case !finished:
-		return res, fmt.Errorf("%w: codex exited (%d) before the turn completed: %s", runner.ErrProcess, code, tail(stderr))
 	}
-	return res, nil
+	return res, fmt.Errorf("%w: codex exited (%d) before the turn completed: %s", runner.ErrProcess, code, tail(stderr))
 }
 
 func tail(s string) string {

@@ -65,9 +65,12 @@ Rules enforced by the orchestrator:
 ## Events
 
 Every event has `seq` (assigned by storage, strictly increasing), `type`,
-`topicId` (empty for workspace-level events), `at` and `payload`. The UI
-keeps the last `seq` it applied; after a reconnect or a `forum:resync`
-signal it calls `Events(after)` and applies the missing events in order.
+`topicId` (empty for workspace-level events), `at` and `payload`. Every
+write that emits events, in the orchestrator or in the application layer,
+goes through one serialised commit path, so events are published in
+sequence order without gaps. The UI keeps the last `seq` it applied; after
+a reconnect or a `forum:resync` signal it calls `Events(after)` and
+applies the missing events in order.
 
 | Type | Payload | Notes |
 | --- | --- | --- |
@@ -76,7 +79,7 @@ signal it calls `Events(after)` and applies the missing events in order.
 | `message.revealed` | `{message}` | Full body; one per revealed message |
 | `run.status_changed` | `{runId, participantId, roundId, status, error, usage}` | `usage` present on terminal states |
 | `run.output` | `{runId, index, text, sealed}` | Coalesced chunks; `text` is empty when `sealed` |
-| `run.tool_activity` | `{runId, tool, summary, status}` | Summary only, never raw tool input or output |
+| `run.tool_activity` | `{runId, tool, summary, status}` | Summary only, never raw tool input or output; empty summary for sealed runs |
 | `round.status_changed` | `{roundId, status}` | |
 | `context.revised` | `{revision}` | New revision or status change |
 | `participant.changed` | `{participant}` | |
@@ -92,7 +95,7 @@ signal it calls `Events(after)` and applies the missing events in order.
 | `GetThread(topicId, limit)` | Topic, newest `limit` visible messages, runs, rounds, participants, current context, `lastEventSeq` |
 | `PostMessage({topicId, body, parentId, mentions, mode, autoReveal})` | Stores the message; starts a round for mentioned and "always" participants: `one` → single (joint when several), `joint`, `independent` |
 | `CancelRun(runId)`, `CancelRound(roundId)` | |
-| `RevealRound(roundId)` | From `awaiting_reveal` or, explicitly, `partial` |
+| `RevealRound(roundId)` | From `awaiting_reveal` or, explicitly, `partial`; refused while any run of the round is queued or running |
 | `RetryRound(roundId)` | New runs for participants without a successful run |
 | `EvaluateRound(roundId, autoReveal)` | Independent round in which the participants of a revealed round judge each other's answers |
 | `RunOutput(runId)` | Streamed text; error while the round is sealed |

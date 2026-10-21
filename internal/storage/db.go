@@ -37,7 +37,12 @@ type DB struct {
 // migrations. Use ":memory:" only for throwaway tests: WAL mode and
 // multiple connections need a file.
 func Open(ctx context.Context, path string) (*DB, error) {
+	// _txlock=immediate makes read-write transactions take the write lock
+	// at BEGIN, so a second writer waits for busy_timeout instead of
+	// failing with SQLITE_BUSY when it tries to upgrade a read snapshot.
+	// Read-only transactions (View) still begin deferred.
 	dsn := "file:" + path + "?" + url.Values{
+		"_txlock": []string{"immediate"},
 		"_pragma": []string{
 			"journal_mode(WAL)",
 			"foreign_keys(ON)",
@@ -182,8 +187,13 @@ func (db *DB) View(ctx context.Context, fn func(*Tx) error) error {
 	return fn(&Tx{ctx: ctx, tx: tx})
 }
 
+// timeLayout is fixed-width so that lexical order of the stored strings
+// equals chronological order; RFC3339Nano trims trailing zeros and breaks
+// that property.
+const timeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
 func formatTime(t time.Time) string {
-	return t.UTC().Format(time.RFC3339Nano)
+	return t.UTC().Format(timeLayout)
 }
 
 func parseTime(s sql.NullString) time.Time {
