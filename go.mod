@@ -1,4 +1,4 @@
-module agent-forum
+module github.com/JuliaRakitina/agent-forum
 
 go 1.26.0
 

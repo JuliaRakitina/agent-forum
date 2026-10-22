@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"agent-forum/internal/domain"
-	"agent-forum/internal/runner"
-	"agent-forum/internal/runners/process"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/runner"
+	"github.com/JuliaRakitina/agent-forum/internal/runners/process"
 )
 
 // Runner drives the claude binary.

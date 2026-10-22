@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
 )
 
 func openTest(t *testing.T) *DB {

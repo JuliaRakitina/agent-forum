@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"agent-forum/internal/domain"
-	"agent-forum/internal/storage"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/storage"
 )
 
 // streamer coalesces text deltas into chunks that are persisted and

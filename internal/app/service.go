@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"agent-forum/internal/domain"
-	"agent-forum/internal/orchestrator"
-	"agent-forum/internal/runner"
-	"agent-forum/internal/runner/fake"
-	"agent-forum/internal/runners/claude"
-	"agent-forum/internal/runners/codex"
-	"agent-forum/internal/storage"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/orchestrator"
+	"github.com/JuliaRakitina/agent-forum/internal/runner"
+	"github.com/JuliaRakitina/agent-forum/internal/runner/fake"
+	"github.com/JuliaRakitina/agent-forum/internal/runners/claude"
+	"github.com/JuliaRakitina/agent-forum/internal/runners/codex"
+	"github.com/JuliaRakitina/agent-forum/internal/storage"
 )
 
 // Config configures the application.

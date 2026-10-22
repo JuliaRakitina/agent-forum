@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"agent-forum/internal/runner"
+	"github.com/JuliaRakitina/agent-forum/internal/runner"
 )
 
 type collector struct{ events []runner.Event }

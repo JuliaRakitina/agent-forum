@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
 )
 
 // Material is everything that goes into one prompt.

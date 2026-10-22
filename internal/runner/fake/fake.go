@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"agent-forum/internal/domain"
-	"agent-forum/internal/runner"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/runner"
 )
 
 // Script describes one fake run.

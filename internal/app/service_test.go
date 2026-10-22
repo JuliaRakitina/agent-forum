@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"agent-forum/internal/domain"
-	"agent-forum/internal/runner"
-	"agent-forum/internal/runner/fake"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/runner"
+	"github.com/JuliaRakitina/agent-forum/internal/runner/fake"
 )
 
 func openTest(t *testing.T) (*Service, *fake.Runner) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
 )
 
 // --- workspaces -----------------------------------------------------------

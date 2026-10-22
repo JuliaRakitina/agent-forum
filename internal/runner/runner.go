@@ -9,7 +9,7 @@ import (
 	"errors"
 	"time"
 
-	"agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
 )
 
 // Capabilities declares what an adapter can do, so the UI can hide or

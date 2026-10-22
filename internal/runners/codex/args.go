@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"agent-forum/internal/domain"
-	"agent-forum/internal/runner"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/runner"
 )
 
 // Efforts lists reasoning effort values accepted by the config key

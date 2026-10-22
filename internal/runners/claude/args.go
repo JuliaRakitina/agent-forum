@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"agent-forum/internal/domain"
-	"agent-forum/internal/runner"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/runner"
 )
 
 // Efforts lists the effort levels the CLI accepts. Which ones a given model

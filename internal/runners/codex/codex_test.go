@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"agent-forum/internal/domain"
-	"agent-forum/internal/runner"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/runner"
 )
 
 func TestBuildInvocationSoftReadOnly(t *testing.T) {

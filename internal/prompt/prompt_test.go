@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
 )
 
 func TestBuildRendersEverything(t *testing.T) {

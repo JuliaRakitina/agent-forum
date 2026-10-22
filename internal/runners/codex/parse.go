@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"agent-forum/internal/domain"
-	"agent-forum/internal/runner"
+	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/runner"
 )
 
 // Parser turns `codex exec --json` lines into runner events. The wire format
