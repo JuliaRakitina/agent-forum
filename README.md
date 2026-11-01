@@ -15,6 +15,9 @@ looks like.
 
 *Mock mode: the UI running in a browser against the in-memory backend, no CLI involved.*
 
+Product principles, including why consensus between models is not
+verification, are in [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
+
 ## What it does
 
 - Topics with threaded messages, mentions and streaming answers.

@@ -44,3 +44,18 @@ machine first, breadth later. Dates are not promised.
 - Signed macOS build, release workflow.
 - Public repository hygiene: dependency licence check, issue templates,
   screenshots, a demo recording of a real round.
+
+## Candidates from the product principles (not scheduled)
+
+docs/PRINCIPLES.md records the principles and maps them onto this plan.
+Items it marks as new, none of them scheduled yet:
+
+- Three result states (model consensus, verified, human approved) on
+  decisions or claims, with evidence references.
+- Disagreement tracking.
+- Adversarial round roles and a bounded multi-turn open discussion.
+- Per-participant context visibility and isolated branches.
+- Diff review on attached changes.
+- Explicit limits per topic: rounds and estimated cost.
+- Per-run git worktrees for parallel editing of a real repository.
+
