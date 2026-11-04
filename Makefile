@@ -4,13 +4,20 @@
 GO ?= go
 WAILS ?= wails
 
-.PHONY: test test-race vet lint frontend-check build dev tidy
+.PHONY: test test-race fuzz vet lint frontend-check build dev tidy
 
 test:
-	$(GO) test ./internal/...
+	$(GO) test ./internal/... ./cmd/...
 
 test-race:
-	$(GO) test -race -count=1 ./internal/...
+	$(GO) test -race -count=1 ./internal/... ./cmd/...
+
+# Fuzz the parsers of CLI output for FUZZTIME each (seeds also run in `test`).
+FUZZTIME ?= 30s
+fuzz:
+	$(GO) test -run='^$$' -fuzz='^FuzzParser$$' -fuzztime=$(FUZZTIME) ./internal/runners/claude/
+	$(GO) test -run='^$$' -fuzz='^FuzzParser$$' -fuzztime=$(FUZZTIME) ./internal/runners/codex/
+	$(GO) test -run='^$$' -fuzz='^FuzzLineSplitter$$' -fuzztime=$(FUZZTIME) ./internal/runners/process/
 
 # The root package embeds frontend/dist, which exists only after a frontend
 # build, so vet covers the core and commands; `wails build` vets the rest.

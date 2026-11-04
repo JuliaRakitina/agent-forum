@@ -2,7 +2,8 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # Agent branches get CI before they are merged (one branch per task).
+    branches: [main, 'claude/**', 'codex/**']
   pull_request:
 
 jobs:
@@ -18,8 +19,29 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: go vet ./internal/...
-      - run: go test -race -count=1 ./internal/...
+      - run: go vet ./internal/... ./cmd/...
+      - run: go test -race -count=1 ./internal/... ./cmd/...
+
+  cross:
+    name: Cross-compile core (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [windows/amd64, darwin/arm64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build and vet
+        env:
+          CGO_ENABLED: "0"
+          TARGET: ${{ matrix.target }}
+        run: |
+          export GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}"
+          go build -o /dev/null ./internal/... ./cmd/...
+          go vet ./internal/... ./cmd/...
 
   lint:
     name: Go lint
