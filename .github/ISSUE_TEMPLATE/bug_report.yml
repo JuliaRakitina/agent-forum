@@ -1,0 +1,47 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a topic
+        2. Mention Claude and Codex with "Independent answers"
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 26.1, Apple silicon
+    validations:
+      required: true
+  - type: textarea
+    id: clis
+    attributes:
+      label: CLI versions
+      description: Output of `claude --version` and `codex --version`, if the problem involves a run.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or probe output
+      description: |
+        Output of `go run ./cmd/probe ...` helps a lot for adapter problems.
+        Remove anything private before posting; never paste credentials.
+      render: text
