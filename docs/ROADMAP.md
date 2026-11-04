@@ -48,8 +48,9 @@ machine first, breadth later. Dates are not promised.
   the Windows process tree kill (job objects) is still missing.
 - Signed macOS build, release workflow.
 - Public repository hygiene: [x] AGENTS.md, contributing guide, security
-  policy, issue and PR templates; [ ] dependency licence check, a demo
-  recording of a real round.
+  policy, issue and PR templates; [x] dependency licence check
+  (docs/LICENSES.md, scripts/licenses.sh); [ ] a demo recording of a real
+  round.
 
 ## Candidates from the product principles (not scheduled)
 
