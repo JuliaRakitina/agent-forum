@@ -27,6 +27,11 @@ var migrationFS embed.FS
 // ErrNotFound is returned when a row does not exist.
 var ErrNotFound = errors.New("storage: not found")
 
+// ErrSchemaTooNew is returned when the database was migrated by a newer
+// build than this one. Opening it would risk writing rows the newer schema
+// does not expect, so the build refuses instead of guessing.
+var ErrSchemaTooNew = errors.New("storage: database schema is newer than this build")
+
 // DB is an open database.
 type DB struct {
 	sql  *sql.DB
@@ -74,7 +79,21 @@ func (db *DB) Path() string { return db.path }
 // Migrate applies the embedded migrations that have not been applied yet.
 // Each migration runs in its own transaction and is recorded in
 // schema_migrations, so a crash between two migrations is safe to retry.
+//
+// Before the first pending migration runs on a database that already holds
+// a schema, the file is backed up next to itself as
+// "<name>.pre-v<N>-<timestamp>.bak" and the copy is verified. A database
+// migrated by a newer build is refused with ErrSchemaTooNew.
 func (db *DB) Migrate(ctx context.Context) error {
+	return db.migrate(ctx, migrationFS, "migrations")
+}
+
+type migration struct {
+	version int
+	name    string
+}
+
+func (db *DB) migrate(ctx context.Context, fsys fs.FS, dir string) error {
 	if _, err := db.sql.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)`); err != nil {
 		return fmt.Errorf("storage: migrations table: %w", err)
@@ -96,20 +115,37 @@ func (db *DB) Migrate(ctx context.Context) error {
 		return err
 	}
 
-	entries, err := fs.ReadDir(migrationFS, "migrations")
+	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
 		return err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	known := 0
+	var pending []migration
 	for _, e := range entries {
 		version, err := migrationVersion(e.Name())
 		if err != nil {
 			return err
 		}
-		if applied[version] {
-			continue
+		known = max(known, version)
+		if !applied[version] {
+			pending = append(pending, migration{version: version, name: e.Name()})
 		}
-		body, err := migrationFS.ReadFile("migrations/" + e.Name())
+	}
+	for v := range applied {
+		if v > known {
+			return fmt.Errorf("%w: database has version %d, this build knows versions up to %d", ErrSchemaTooNew, v, known)
+		}
+	}
+	if len(pending) > 0 && len(applied) > 0 && db.path != ":memory:" {
+		dest := fmt.Sprintf("%s.pre-v%d-%s.bak", db.path, pending[0].version, time.Now().UTC().Format("20060102T150405Z"))
+		if err := db.Backup(ctx, dest); err != nil {
+			return fmt.Errorf("storage: backup before migration %s: %w", pending[0].name, err)
+		}
+	}
+
+	for _, m := range pending {
+		body, err := fs.ReadFile(fsys, dir+"/"+m.name)
 		if err != nil {
 			return err
 		}
@@ -119,10 +155,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 		}
 		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("storage: migration %s: %w", e.Name(), err)
+			return fmt.Errorf("storage: migration %s: %w", m.name, err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`,
-			version, e.Name(), formatTime(time.Now())); err != nil {
+			m.version, m.name, formatTime(time.Now())); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
