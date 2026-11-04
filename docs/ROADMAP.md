@@ -25,7 +25,10 @@ machine first, breadth later. Dates are not promised.
 - Virtualised message list and measured memory for long topics.
 - Agent-proposed context revisions (`proposed` status exists; no adapter
   produces proposals yet).
-- Export of a topic (Markdown + JSON) without sealed messages or secrets.
+- [x] Export of a topic (Markdown + JSON) without sealed messages or
+      secrets: window buttons and `forumctl export`.
+- [x] Verified backups (`forumctl backup`), automatic backup before
+      migrations, refusal of databases from newer builds.
 - Artifacts: store files in the managed directory and reference versions
   from messages (schema exists).
 
@@ -40,10 +43,13 @@ machine first, breadth later. Dates are not promised.
 
 ## Step 4: release
 
-- Windows and Linux builds, each verified separately.
+- Windows and Linux builds, each verified separately. The core already
+  cross-compiles for windows/amd64, darwin/arm64 and linux/arm64 in CI;
+  the Windows process tree kill (job objects) is still missing.
 - Signed macOS build, release workflow.
-- Public repository hygiene: dependency licence check, issue templates,
-  screenshots, a demo recording of a real round.
+- Public repository hygiene: [x] AGENTS.md, contributing guide, security
+  policy, issue and PR templates; [ ] dependency licence check, a demo
+  recording of a real round.
 
 ## Candidates from the product principles (not scheduled)
 

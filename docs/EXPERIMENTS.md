@@ -150,3 +150,17 @@ messages; two concurrent fake runs; two concurrent real runs. Record OS,
 versions and method.
 
 Result: _pending_.
+
+## 8. Export and backup on macOS
+
+1. With a topic open, click **Export .md** and **.json** in the top bar.
+   The native save dialog must offer a file name like
+   `<title>-<date>.md`; the saved file must open and must not contain the
+   text of any sealed answer (start an independent round, export before
+   revealing it, search the file for its text).
+2. While the app is open, run `go run ./cmd/forumctl backup` and then
+   `go run ./cmd/forumctl verify <printed path>`; both must succeed.
+3. Quit the app, restore the backup as README describes, start the app
+   and check that the topics are there.
+
+Result: _pending_.

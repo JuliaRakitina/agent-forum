@@ -103,6 +103,24 @@ applies the missing events in order.
 | `ListContextRevisions(topicId)`, `SetContextRevisionStatus(id, status)` | Accept or discard a proposal |
 | `Events(after, limit)` | Event log replay |
 | `Capabilities()` | One entry per provider |
+| `ExportTopic(topicId, format)` | `markdown` or `json`; native save dialog; returns the saved path, empty when cancelled |
+
+## Data safety
+
+- **Exports** (`internal/export`, format `agent-forum.topic/v1`) contain
+  visible messages, context revisions, participants without role
+  instructions, rounds and runs. Sealed answers of unrevealed rounds are
+  counted in `omitted.sealedMessages` and never included, nor are the run
+  errors of those rounds. Local paths and native session IDs are left out.
+- **Backups** (`storage.DB.Backup`) use `VACUUM INTO` on a live database
+  and keep the copy only if it passes `PRAGMA integrity_check` and carries
+  the expected schema version.
+- **Migrations** back the file up as `forum.db.pre-v<N>-<time>.bak` before
+  the first pending migration on an existing database, and a database
+  migrated by a newer build is refused (`ErrSchemaTooNew`).
+- **Maintenance tools** (`cmd/forumctl`) open the database with
+  `storage.OpenExisting`: no creation, no migration, no recovery of runs,
+  so they are safe next to a running application.
 
 ## Runner contract (`internal/runner`)
 

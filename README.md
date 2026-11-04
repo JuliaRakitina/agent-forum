@@ -59,13 +59,32 @@ and, on macOS, the Xcode command line tools. Run `wails doctor` to check.
 
 ```bash
 make test-race        # Go core, no display needed
-make frontend-check   # typecheck + build the UI
+make frontend-check   # typecheck, unit tests, build the UI
+make fuzz             # fuzz the CLI output parsers (30 s each)
 wails dev             # desktop app with live reload
 wails build           # build/bin/agent-forum.app
 ```
 
 The database lives in the OS user-config directory (`agent-forum/forum.db`),
 run directories in the user cache directory.
+
+## Your data
+
+`forumctl` works on the database from a terminal and is safe to run while
+the app is open: it never creates or migrates the database.
+
+```bash
+go run ./cmd/forumctl topics                               # topic IDs
+go run ./cmd/forumctl export -topic <id> > topic.md        # or -format json
+go run ./cmd/forumctl backup                               # verified copy in backups/
+go run ./cmd/forumctl verify <backup-file>
+```
+
+Exports never include sealed answers of unrevealed rounds. Before a new
+schema migration runs, the app backs the database up next to itself
+(`forum.db.pre-v<N>-<time>.bak`). To restore a backup, quit the app, move
+`forum.db` and its `-wal` and `-shm` files aside, and copy the backup to
+`forum.db`.
 
 ## Authentication and policy
 
