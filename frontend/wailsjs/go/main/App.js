@@ -34,6 +34,10 @@ export function Events(arg1, arg2) {
   return window['go']['main']['App']['Events'](arg1, arg2);
 }
 
+export function ExportTopic(arg1, arg2) {
+  return window['go']['main']['App']['ExportTopic'](arg1, arg2);
+}
+
 export function GetThread(arg1, arg2) {
   return window['go']['main']['App']['GetThread'](arg1, arg2);
 }

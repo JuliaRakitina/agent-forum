@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createApi, type ForumApi } from './api'
-import type { ContextDoc, Participant, PostInput } from './api/types'
+import type { ContextDoc, ExportFormat, Participant, PostInput } from './api/types'
 import { Composer } from './components/Composer'
 import { RightPanel } from './components/RightPanel'
 import { Sidebar } from './components/Sidebar'
@@ -56,6 +56,20 @@ export default function App() {
 
   const onSaveParticipant = useCallback((p: Participant) => forum.saveParticipant(p), [forum])
 
+  const onExport = useCallback(
+    async (format: ExportFormat) => {
+      const topicId = forum.state.selectedTopicId
+      if (!api?.exportTopic || !topicId) return
+      try {
+        const path = await api.exportTopic(topicId, format)
+        setNotice(path ? `Exported to ${path}` : null)
+      } catch (err) {
+        setNotice(errorMessage(err))
+      }
+    },
+    [api, forum.state.selectedTopicId],
+  )
+
   if (!api || !forum.state.ready) {
     return <div className="boot">Starting Agent Forum…</div>
   }
@@ -67,7 +81,12 @@ export default function App() {
 
   return (
     <div className="app">
-      <TopBar workspaceName={forum.state.workspace.name} topicTitle={topic?.title ?? null} mode={api.mode} />
+      <TopBar
+        workspaceName={forum.state.workspace.name}
+        topicTitle={topic?.title ?? null}
+        mode={api.mode}
+        onExport={api.exportTopic && topic ? (format) => void onExport(format) : undefined}
+      />
       <Sidebar
         workspace={forum.state.workspace}
         topics={forum.state.topics}

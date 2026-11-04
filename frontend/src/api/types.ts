@@ -99,6 +99,8 @@ export type PostResult = Override<Plain<app.PostResult>, { message: Message; rou
 
 export type ApiMode = 'wails' | 'mock'
 
+export type ExportFormat = 'markdown' | 'json'
+
 /** Everything the UI needs from the backend, in either the Wails window or the browser mock. */
 export interface ForumApi {
   readonly mode: ApiMode
@@ -125,4 +127,9 @@ export interface ForumApi {
   onEvent(cb: (ev: Event) => void): () => void
   /** Fires when events were dropped and the UI should reload from `events(lastSeq)`. */
   onResync(cb: () => void): () => void
+  /**
+   * Saves a topic through the native save dialog and resolves to the saved path, or to an
+   * empty string when the user cancelled. Only the desktop backend offers it.
+   */
+  exportTopic?(topicId: string, format: ExportFormat): Promise<string>
 }

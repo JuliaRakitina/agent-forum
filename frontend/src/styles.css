@@ -192,6 +192,12 @@ ul {
   color: var(--text-muted);
 }
 
+.topbar-actions {
+  display: flex;
+  gap: var(--space-1);
+  flex: none;
+}
+
 .sidebar {
   grid-area: side;
   overflow-y: auto;

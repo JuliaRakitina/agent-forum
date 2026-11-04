@@ -20,6 +20,8 @@ export function EvaluateRound(arg1:string,arg2:boolean):Promise<domain.Round>;
 
 export function Events(arg1:number,arg2:number):Promise<Array<domain.Event>>;
 
+export function ExportTopic(arg1:string,arg2:string):Promise<string>;
+
 export function GetThread(arg1:string,arg2:number):Promise<app.Thread>;
 
 export function ListContextRevisions(arg1:string):Promise<Array<domain.ContextRevision>>;

@@ -34,4 +34,5 @@ export const wailsApi: ForumApi = {
   // The runtime delivers the Go struct as JSON; `payload` arrives as an object.
   onEvent: (cb) => EventsOn('forum:event', (raw: unknown) => cb(raw as Event)),
   onResync: (cb) => EventsOn('forum:resync', () => cb()),
+  exportTopic: (topicId, format) => App.ExportTopic(topicId, format),
 }

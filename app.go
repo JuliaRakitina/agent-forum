@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"sort"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/JuliaRakitina/agent-forum/internal/app"
 	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/export"
 	"github.com/JuliaRakitina/agent-forum/internal/orchestrator"
 	"github.com/JuliaRakitina/agent-forum/internal/runner"
 )
@@ -158,4 +160,35 @@ func (a *App) SetContextRevisionStatus(revisionID string, status domain.Revision
 // Events returns events after the given sequence number.
 func (a *App) Events(after int64, limit int) ([]domain.Event, error) {
 	return a.svc.Events(a.ctx, after, limit)
+}
+
+// ExportTopic renders a topic as "markdown" or "json", asks where to save
+// it and writes the file. It returns the saved path, or an empty string
+// when the user cancelled the dialog. Sealed answers are never exported.
+func (a *App) ExportTopic(topicID, format string) (string, error) {
+	f, err := export.ParseFormat(format)
+	if err != nil {
+		return "", err
+	}
+	file, err := a.svc.ExportTopic(a.ctx, domain.ID(topicID), f)
+	if err != nil {
+		return "", err
+	}
+	filter := runtime.FileFilter{DisplayName: "Markdown (*.md)", Pattern: "*.md"}
+	if f == export.JSON {
+		filter = runtime.FileFilter{DisplayName: "JSON (*.json)", Pattern: "*.json"}
+	}
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:                "Export topic",
+		DefaultFilename:      file.Name,
+		Filters:              []runtime.FileFilter{filter},
+		CanCreateDirectories: true,
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	if err := os.WriteFile(path, file.Content, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
