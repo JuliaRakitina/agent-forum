@@ -131,6 +131,38 @@ func TestFreshDatabaseIsNotBackedUp(t *testing.T) {
 	}
 }
 
+func TestOpenExistingDoesNotCreateOrMigrate(t *testing.T) {
+	ctx := context.Background()
+	missing := filepath.Join(t.TempDir(), "missing.db")
+	if _, err := OpenExisting(ctx, missing); err == nil {
+		t.Fatal("a missing file must not be created")
+	}
+	if _, err := os.Stat(missing); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("OpenExisting created %s", missing)
+	}
+	db := openTest(t)
+	seed(t, db)
+	other, err := OpenExisting(ctx, db.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = other.Close()
+
+	if _, err := db.sql.ExecContext(ctx, `INSERT INTO schema_migrations (version, name, applied_at) VALUES (7, '0007_future.sql', ?)`, formatTime(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenExisting(ctx, db.Path()); !errors.Is(err, ErrSchemaTooNew) {
+		t.Fatalf("want ErrSchemaTooNew, got %v", err)
+	}
+	plain := filepath.Join(t.TempDir(), "plain.db")
+	if err := os.WriteFile(plain, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenExisting(ctx, plain); err == nil {
+		t.Fatal("an empty file is not a forum database")
+	}
+}
+
 func TestNewerSchemaIsRefused(t *testing.T) {
 	db := openTest(t)
 	ctx := context.Background()

@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/export"
 	"github.com/JuliaRakitina/agent-forum/internal/runner"
 	"github.com/JuliaRakitina/agent-forum/internal/runner/fake"
+	"github.com/JuliaRakitina/agent-forum/internal/storage"
 )
 
 func openTest(t *testing.T) (*Service, *fake.Runner) {
@@ -227,5 +229,56 @@ func TestSealedOutputAndContext(t *testing.T) {
 	revs, _ := svc.ListContextRevisions(ctx, tp.ID)
 	if len(revs) != 1 {
 		t.Fatalf("revisions: %+v", revs)
+	}
+}
+
+func TestExportHidesSealedRoundUntilRevealAndBackupVerifies(t *testing.T) {
+	svc, fk := openTest(t)
+	ctx := context.Background()
+	ws, _ := svc.EnsureWorkspace(ctx)
+	a, _ := svc.SaveParticipant(ctx, domain.Participant{WorkspaceID: ws.ID, Name: "A", Provider: domain.ProviderFake})
+	tp, _ := svc.CreateTopic(ctx, ws.ID, "Export me", "")
+	fk.Next = fake.Script{Chunks: []string{"blind-answer"}, FailAfter: -1}
+	res, err := svc.PostMessage(ctx, PostInput{TopicID: tp.ID, Body: "question", Mentions: []domain.ID{a.ID}, Mode: AskIndependent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		th, _ := svc.GetThread(ctx, tp.ID, 50)
+		if len(th.Rounds) == 1 && th.Rounds[0].Status == domain.RoundAwaitingReveal {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("round did not reach awaiting_reveal")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, f := range []export.Format{export.Markdown, export.JSON} {
+		file, err := svc.ExportTopic(ctx, tp.ID, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(file.Content), "blind-answer") || !strings.Contains(string(file.Content), "question") {
+			t.Fatalf("%s export before reveal:\n%s", f, file.Content)
+		}
+	}
+	if err := svc.RevealRound(ctx, res.Round.ID); err != nil {
+		t.Fatal(err)
+	}
+	file, err := svc.ExportTopic(ctx, tp.ID, export.Markdown)
+	if err != nil || !strings.Contains(string(file.Content), "blind-answer") {
+		t.Fatalf("export after reveal: %v\n%s", err, file.Content)
+	}
+
+	path, err := svc.Backup(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(path, svc.DataDir()) {
+		t.Fatalf("default backup %q is outside the data dir %q", path, svc.DataDir())
+	}
+	if err := storage.VerifyBackup(ctx, path, 1); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,20 +43,7 @@ type DB struct {
 // migrations. Use ":memory:" only for throwaway tests: WAL mode and
 // multiple connections need a file.
 func Open(ctx context.Context, path string) (*DB, error) {
-	// _txlock=immediate makes read-write transactions take the write lock
-	// at BEGIN, so a second writer waits for busy_timeout instead of
-	// failing with SQLITE_BUSY when it tries to upgrade a read snapshot.
-	// Read-only transactions (View) still begin deferred.
-	dsn := "file:" + path + "?" + url.Values{
-		"_txlock": []string{"immediate"},
-		"_pragma": []string{
-			"journal_mode(WAL)",
-			"foreign_keys(ON)",
-			"busy_timeout(5000)",
-			"synchronous(NORMAL)",
-		},
-	}.Encode()
-	handle, err := sql.Open("sqlite", dsn)
+	handle, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
 		return nil, fmt.Errorf("storage: open: %w", err)
 	}
@@ -68,6 +56,74 @@ func Open(ctx context.Context, path string) (*DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+// dsn builds the connection string shared by Open and OpenExisting.
+//
+// _txlock=immediate makes read-write transactions take the write lock at
+// BEGIN, so a second writer waits for busy_timeout instead of failing with
+// SQLITE_BUSY when it tries to upgrade a read snapshot. Read-only
+// transactions (View) still begin deferred.
+func dsn(path string) string {
+	return "file:" + path + "?" + url.Values{
+		"_txlock": []string{"immediate"},
+		"_pragma": []string{
+			"journal_mode(WAL)",
+			"foreign_keys(ON)",
+			"busy_timeout(5000)",
+			"synchronous(NORMAL)",
+		},
+	}.Encode()
+}
+
+// OpenExisting opens a database without migrating it, for tools that run
+// next to the application. The file must exist and carry exactly the
+// schema version this build knows: an older file is migrated by the
+// application on its next start, a newer one belongs to a newer build.
+func OpenExisting(ctx context.Context, path string) (*DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("storage: open existing: %w", err)
+	}
+	handle, err := sql.Open("sqlite", dsn(path))
+	if err != nil {
+		return nil, fmt.Errorf("storage: open: %w", err)
+	}
+	db := &DB{sql: handle, path: path}
+	have, err := db.SchemaVersion(ctx)
+	if err != nil {
+		_ = handle.Close()
+		return nil, fmt.Errorf("storage: %s is not an Agent Forum database: %w", path, err)
+	}
+	want, err := latestVersion(migrationFS, "migrations")
+	if err != nil {
+		_ = handle.Close()
+		return nil, err
+	}
+	switch {
+	case have > want:
+		_ = handle.Close()
+		return nil, fmt.Errorf("%w: database has version %d, this build knows versions up to %d", ErrSchemaTooNew, have, want)
+	case have < want:
+		_ = handle.Close()
+		return nil, fmt.Errorf("storage: database has schema version %d, this build expects %d; start the application once to migrate it", have, want)
+	}
+	return db, nil
+}
+
+func latestVersion(fsys fs.FS, dir string) (int, error) {
+	entries, err := fs.ReadDir(fsys, dir)
+	if err != nil {
+		return 0, err
+	}
+	latest := 0
+	for _, e := range entries {
+		v, err := migrationVersion(e.Name())
+		if err != nil {
+			return 0, err
+		}
+		latest = max(latest, v)
+	}
+	return latest, nil
 }
 
 // Close closes the database.

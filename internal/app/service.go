@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/JuliaRakitina/agent-forum/internal/domain"
+	"github.com/JuliaRakitina/agent-forum/internal/export"
 	"github.com/JuliaRakitina/agent-forum/internal/orchestrator"
 	"github.com/JuliaRakitina/agent-forum/internal/runner"
 	"github.com/JuliaRakitina/agent-forum/internal/runner/fake"
@@ -45,6 +46,19 @@ func DefaultConfig() Config {
 	return Config{Workers: 2, RunTimeout: 15 * time.Minute}
 }
 
+// DatabaseFile is the name of the database inside the data directory.
+const DatabaseFile = "forum.db"
+
+// DefaultDataDir returns the directory the application keeps its database
+// in: "agent-forum" under the OS user-config directory.
+func DefaultDataDir() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("app: config dir: %w", err)
+	}
+	return filepath.Join(base, "agent-forum"), nil
+}
+
 // Service is the application.
 type Service struct {
 	cfg     Config
@@ -57,11 +71,11 @@ type Service struct {
 // orchestrator.
 func Open(ctx context.Context, cfg Config) (*Service, error) {
 	if cfg.DataDir == "" {
-		base, err := os.UserConfigDir()
+		dir, err := DefaultDataDir()
 		if err != nil {
-			return nil, fmt.Errorf("app: config dir: %w", err)
+			return nil, err
 		}
-		cfg.DataDir = filepath.Join(base, "agent-forum")
+		cfg.DataDir = dir
 	}
 	if cfg.RunsDir == "" {
 		base, err := os.UserCacheDir()
@@ -73,7 +87,7 @@ func Open(ctx context.Context, cfg Config) (*Service, error) {
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return nil, err
 	}
-	db, err := storage.Open(ctx, filepath.Join(cfg.DataDir, "forum.db"))
+	db, err := storage.Open(ctx, filepath.Join(cfg.DataDir, DatabaseFile))
 	if err != nil {
 		return nil, err
 	}
@@ -571,6 +585,36 @@ func (s *Service) SetContextRevisionStatus(ctx context.Context, revisionID domai
 		emit(domain.NewEvent(domain.EventContextRevised, rev.TopicID, domain.ContextRevisedPayload{Revision: rev}))
 		return nil
 	})
+}
+
+// --- export and backup ----------------------------------------------------
+
+// ExportTopic renders a topic in the given format. The result never holds
+// sealed answers, local paths or native session IDs; see package export.
+func (s *Service) ExportTopic(ctx context.Context, topicID domain.ID, format export.Format) (export.File, error) {
+	var doc export.Document
+	err := s.db.View(ctx, func(tx *storage.Tx) error {
+		d, err := export.Build(tx, topicID, time.Now())
+		doc = d
+		return err
+	})
+	if err != nil {
+		return export.File{}, err
+	}
+	return export.Render(doc, format)
+}
+
+// Backup writes a verified copy of the database to dest. An empty dest
+// uses "backups/forum-<timestamp>.db" in the data directory. It returns
+// the path written.
+func (s *Service) Backup(ctx context.Context, dest string) (string, error) {
+	if dest == "" {
+		dest = filepath.Join(s.cfg.DataDir, "backups", "forum-"+time.Now().UTC().Format("20060102T150405Z")+".db")
+	}
+	if err := s.db.Backup(ctx, dest); err != nil {
+		return "", err
+	}
+	return dest, nil
 }
 
 // --- events ---------------------------------------------------------------
