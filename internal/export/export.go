@@ -4,8 +4,8 @@
 // participants and the history of rounds and runs.
 //
 // It never holds sealed messages of unrevealed rounds (only their count),
-// run errors of such rounds, participant role instructions, local paths or
-// the CLIs' native session IDs.
+// raw run diagnostics, participant role instructions, local paths or the
+// CLIs' native session IDs.
 package export
 
 import (
@@ -106,10 +106,11 @@ type Run struct {
 	ID          domain.ID        `json:"id"`
 	Participant string           `json:"participant"`
 	Status      domain.RunStatus `json:"status"`
-	Error       string           `json:"error,omitempty"`
-	Usage       domain.Usage     `json:"usage"`
-	StartedAt   time.Time        `json:"startedAt,omitempty"`
-	FinishedAt  time.Time        `json:"finishedAt,omitempty"`
+	// Error is a fixed message when an unsealed run recorded an error.
+	Error      string       `json:"error,omitempty"`
+	Usage      domain.Usage `json:"usage"`
+	StartedAt  time.Time    `json:"startedAt,omitempty"`
+	FinishedAt time.Time    `json:"finishedAt,omitempty"`
 }
 
 // Omitted counts what was left out on purpose.
@@ -191,9 +192,9 @@ func Build(tx *storage.Tx, topicID domain.ID, now time.Time) (Document, error) {
 		}
 		for _, r := range byRound[rd.ID] {
 			run := Run{ID: r.ID, Participant: nameOr(names, r.ParticipantID), Status: r.Status, Usage: r.Usage, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt}
-			if !sealed {
-				// Errors of a sealed run may quote its output.
-				run.Error = r.Error
+			if !sealed && r.Error != "" {
+				// CLI diagnostics may contain local paths or other private data.
+				run.Error = "Run error details omitted"
 			}
 			out.Runs = append(out.Runs, run)
 		}

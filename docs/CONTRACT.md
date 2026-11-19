@@ -111,7 +111,9 @@ applies the missing events in order.
   visible messages, context revisions, participants without role
   instructions, rounds and runs. Sealed answers of unrevealed rounds are
   counted in `omitted.sealedMessages` and never included, nor are the run
-  errors of those rounds. Local paths and native session IDs are left out.
+  errors of those rounds. Errors in unsealed rounds are represented by a
+  fixed message without diagnostics. Local paths and native session IDs are
+  left out.
 - **Backups** (`storage.DB.Backup`) use `VACUUM INTO` on a live database
   and keep the copy only if it passes `PRAGMA integrity_check` and carries
   the expected schema version.

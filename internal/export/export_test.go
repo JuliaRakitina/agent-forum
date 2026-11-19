@@ -123,8 +123,11 @@ func TestExportLeavesOutSealedAndPrivateData(t *testing.T) {
 	if len(doc.Rounds) != 2 || !doc.Rounds[1].Sealed || doc.Rounds[0].Sealed {
 		t.Fatalf("rounds: %+v", doc.Rounds)
 	}
-	if doc.Rounds[0].Runs[1].Error != "rate limited" {
-		t.Fatalf("errors of revealed rounds stay: %+v", doc.Rounds[0].Runs)
+	if doc.Rounds[0].Runs[1].Error != "Run error details omitted" {
+		t.Fatalf("error indicator for revealed run: %+v", doc.Rounds[0].Runs)
+	}
+	if doc.Rounds[1].Runs[1].Error != "" {
+		t.Fatalf("error indicator for sealed run: %+v", doc.Rounds[1].Runs)
 	}
 }
 
@@ -154,6 +157,42 @@ func TestExportJSONShape(t *testing.T) {
 	}
 	if file.Name != "выбор-стека-wails-v2-2026-11-04.json" {
 		t.Fatalf("file name %q", file.Name)
+	}
+}
+
+func TestExportJSONOmitsRawRunDiagnostics(t *testing.T) {
+	db, tp := seedTopic(t)
+	const privatePath = "/Users/example/Private Folder/bin/codex"
+	usage := domain.Usage{InputTokens: 8, OutputTokens: 2}
+	if err := db.Update(context.Background(), func(tx *storage.Tx) error {
+		run, err := tx.GetRun("run-2")
+		if err != nil {
+			return err
+		}
+		run.Error = "process: start " + privatePath + ": permission denied"
+		run.Usage = usage
+		return tx.UpdateRun(run)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	file, err := Render(build(t, db, tp.ID), JSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(file.Content), privatePath) {
+		t.Errorf("JSON export contains private path %q", privatePath)
+	}
+	var exported Document
+	if err := json.Unmarshal(file.Content, &exported); err != nil {
+		t.Fatal(err)
+	}
+	if len(exported.Rounds) != 2 || len(exported.Rounds[0].Runs) != 2 {
+		t.Fatalf("rounds: %+v", exported.Rounds)
+	}
+	failed := exported.Rounds[0].Runs[1]
+	if failed.ID != "run-2" || failed.Status != domain.RunFailed || failed.Usage != usage {
+		t.Fatalf("failed run metadata: %+v", failed)
 	}
 }
 
