@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -13,20 +12,14 @@ import (
 // Backup writes a consistent copy of the open database to dest and
 // verifies it. The copy is made with VACUUM INTO, which reads one snapshot
 // while the application keeps running, and is checked with
-// PRAGMA integrity_check and the schema version. dest must not exist; a
-// copy that fails verification is removed, so a backup file on disk is
-// always a good one.
+// PRAGMA integrity_check and the schema version. Backup reserves dest
+// exclusively and removes the copy if writing or verification fails.
 //
 // To restore, close the application, move the current database aside
 // together with its -wal and -shm files, and copy the backup in its place.
 func (db *DB) Backup(ctx context.Context, dest string) error {
 	if db.path == ":memory:" {
 		return errors.New("storage: cannot back up an in-memory database")
-	}
-	if _, err := os.Stat(dest); err == nil {
-		return fmt.Errorf("storage: backup target %s already exists", dest)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("storage: backup target: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return fmt.Errorf("storage: backup directory: %w", err)
@@ -35,18 +28,31 @@ func (db *DB) Backup(ctx context.Context, dest string) error {
 	if err != nil {
 		return fmt.Errorf("storage: backup: schema version: %w", err)
 	}
+	// VACUUM INTO accepts an empty file. Only the caller that creates it
+	// may remove it on failure.
+	file, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("storage: reserve backup target: %w", err)
+	}
+	verified := false
+	defer func() {
+		if !verified {
+			_ = os.Remove(dest)
+		}
+	}()
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("storage: close backup target: %w", err)
+	}
 	if _, err := db.sql.ExecContext(ctx, `VACUUM INTO ?`, dest); err != nil {
-		_ = os.Remove(dest)
 		return fmt.Errorf("storage: backup: %w", err)
 	}
 	if err := os.Chmod(dest, 0o600); err != nil {
-		_ = os.Remove(dest)
 		return fmt.Errorf("storage: backup permissions: %w", err)
 	}
 	if err := VerifyBackup(ctx, dest, version); err != nil {
-		_ = os.Remove(dest)
 		return err
 	}
+	verified = true
 	return nil
 }
 

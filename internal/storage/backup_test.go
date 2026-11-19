@@ -57,6 +57,57 @@ func TestBackupIsConsistentVerifiedAndRestorable(t *testing.T) {
 	})
 }
 
+func TestConcurrentBackupPreservesVerifiedCopy(t *testing.T) {
+	db := openTest(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	waitingDB, err := OpenExisting(ctx, db.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = waitingDB.Close() }()
+	waitingDB.sql.SetMaxOpenConns(1)
+	conn, err := waitingDB.sql.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	dest := filepath.Join(t.TempDir(), "copy.db")
+	waitCount := waitingDB.sql.Stats().WaitCount
+	result := make(chan error, 1)
+	go func() { result <- waitingDB.Backup(ctx, dest) }()
+
+	// Pause the first caller at its schema query. Before the fix, it had
+	// already checked the destination. The other caller completes a backup
+	// before the first resumes.
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for waitingDB.sql.Stats().WaitCount == waitCount {
+		select {
+		case <-tick.C:
+		case err := <-result:
+			t.Fatalf("backup returned before waiting for a connection: %v", err)
+		case <-ctx.Done():
+			t.Fatal("backup did not wait for a connection")
+		}
+	}
+
+	if err := db.Backup(ctx, dest); err != nil {
+		t.Fatalf("backup with a competing caller waiting: %v", err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	competingErr := <-result
+	if err := VerifyBackup(ctx, dest, 1); err != nil {
+		t.Fatalf("competing backup damaged the verified copy: %v", err)
+	}
+	if !errors.Is(competingErr, os.ErrExist) {
+		t.Fatalf("competing backup must report an existing destination: %v", competingErr)
+	}
+}
+
 func TestVerifyBackupRejectsDamagedOrWrongVersion(t *testing.T) {
 	db := openTest(t)
 	seed(t, db)
